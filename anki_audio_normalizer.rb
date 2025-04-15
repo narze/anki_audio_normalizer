@@ -189,12 +189,64 @@ class AnkiAudioNormalizer
     end
   end
 
+  # Get the volume level of an audio file using ffmpeg's volumedetect filter
+  def get_audio_levels(file)
+    puts "#{COLORS[:blue]}Analyzing audio levels for: #{file}#{COLORS[:reset]}" if @options[:verbose]
+
+    # Use ffmpeg's volumedetect filter to get mean and max volume
+    cmd = %{ffmpeg -i "#{file}" -filter:a volumedetect -f null /dev/null 2>&1}
+
+    puts "#{COLORS[:cyan]}Running volume detection:#{COLORS[:reset]}"
+    puts "#{COLORS[:bold]}#{COLORS[:yellow]}#{cmd}#{COLORS[:reset]}"
+
+    result = `#{cmd}`
+    success = $?.success?
+
+    puts "#{COLORS[:cyan]}Raw output:#{COLORS[:reset]}"
+    puts "#{COLORS[:yellow]}#{result}#{COLORS[:reset]}"
+
+    if !success || result.empty?
+      puts "#{COLORS[:red]}Warning: Could not analyze audio levels for #{file}#{COLORS[:reset]}"
+      return { mean_volume: "N/A", max_volume: "N/A" }
+    end
+
+    begin
+      # Extract mean and max volume using regex
+      mean_volume = result.match(/mean_volume: ([-\d.]+) dB/)&.captures&.first || "N/A"
+      max_volume = result.match(/max_volume: ([-\d.]+) dB/)&.captures&.first || "N/A"
+
+      # Convert to numeric if possible
+      mean_volume = mean_volume.to_f if mean_volume != "N/A"
+      max_volume = max_volume.to_f if max_volume != "N/A"
+
+      puts "#{COLORS[:green]}Successfully extracted audio levels#{COLORS[:reset]}" if @options[:verbose]
+
+      return {
+        mean_volume: mean_volume,
+        max_volume: max_volume
+      }
+    rescue => e
+      puts "#{COLORS[:red]}Warning: Error parsing audio levels for #{file}: #{e.message}#{COLORS[:reset]}"
+      puts "#{COLORS[:red]}Error backtrace: #{e.backtrace.join("\n")}#{COLORS[:reset]}" if @options[:verbose]
+      return { mean_volume: "N/A", max_volume: "N/A" }
+    end
+  end
+
   def process_files(files)
     FileUtils.mkdir_p(@options[:backup_dir]) unless @options[:dry_run]
 
     files.each_with_index do |file, index|
       begin
+        # Define temp_file as nil initially to avoid reference errors
+        temp_file = nil
+
         puts "[#{index + 1}/#{files.size}] Processing: #{file}"
+
+        # Measure audio levels before normalization
+        before_levels = get_audio_levels(file)
+        puts "#{COLORS[:cyan]}Original audio levels:#{COLORS[:reset]}"
+        puts "  #{COLORS[:bold]}Mean volume: #{before_levels[:mean_volume]} dB#{COLORS[:reset]}"
+        puts "  #{COLORS[:bold]}Max volume: #{before_levels[:max_volume]} dB#{COLORS[:reset]}"
 
         # Generate backup path
         backup_path = File.join(@options[:backup_dir], File.basename(file))
@@ -203,7 +255,7 @@ class AnkiAudioNormalizer
           puts "  [DRY RUN] Would backup to: #{backup_path}"
           puts "  [DRY RUN] Would normalize audio using ffmpeg-lh"
           @processed_files += 1
-          next
+          next # Skip the rest of the loop in dry run mode
         end
 
         # Check if backup already exists
@@ -249,9 +301,30 @@ class AnkiAudioNormalizer
         # If filter line starts with '-af', it's the correct line
         if filter_line.start_with?('-af')
           puts "#{COLORS[:green]}Extracted filter command: #{filter_line}#{COLORS[:reset]}"
+
+          # Check if the filter line contains "-inf" values which can cause errors
+          if filter_line.include?("measured_I=-inf") || filter_line.include?("offset=inf")
+            puts "#{COLORS[:yellow]}Detected -inf values in the filter, fixing them#{COLORS[:reset]}"
+
+            # Fix -inf values with reasonable defaults that are within acceptable ranges
+            filter_line = filter_line.gsub(/measured_I=-inf/, "measured_I=-70")
+                                    .gsub(/offset=inf/, "offset=0")
+                                    .gsub(/measured_TP=-inf/, "measured_TP=-20")
+                                    .gsub(/measured_thresh=-inf/, "measured_thresh=-70")
+
+            puts "#{COLORS[:green]}Fixed filter command: #{filter_line}#{COLORS[:reset]}"
+          end
         else
           puts "#{COLORS[:yellow]}Warning: Could not find filter line, using full output#{COLORS[:reset]}"
           filter_line = ffmpeg_lh_output.strip
+        end
+
+        # Handle the case of very short audio files directly with a simplified approach if needed
+        if filter_line.include?("-inf") || !filter_line.start_with?('-af')
+          puts "#{COLORS[:yellow]}Using direct gain adjustment for very short audio#{COLORS[:reset]}"
+          # Use a simple volume filter as a fallback for very short files
+          filter_line = "-af volume=#{@options[:integrated_loudness].to_f - (-23)}dB"
+          puts "#{COLORS[:green]}Fallback filter: #{filter_line}#{COLORS[:reset]}"
         end
 
         # Full ffmpeg command with proper codec (not copy)
@@ -273,6 +346,23 @@ class AnkiAudioNormalizer
           if File.exist?(temp_file) && File.size(temp_file) > 0
             FileUtils.mv(temp_file, file)
             puts "#{COLORS[:green]}Successfully normalized: #{file}#{COLORS[:reset]}"
+
+            # Measure audio levels after normalization
+            after_levels = get_audio_levels(file)
+            puts "#{COLORS[:cyan]}Normalized audio levels:#{COLORS[:reset]}"
+            puts "  #{COLORS[:bold]}Mean volume: #{after_levels[:mean_volume]} dB#{COLORS[:reset]}"
+            puts "  #{COLORS[:bold]}Max volume: #{after_levels[:max_volume]} dB#{COLORS[:reset]}"
+
+            # Show a clear volume change summary
+            puts "#{COLORS[:cyan]}Volume change:#{COLORS[:reset]}"
+            mean_before = before_levels[:mean_volume].is_a?(Numeric) ? "#{before_levels[:mean_volume]} dB" : before_levels[:mean_volume]
+            mean_after = after_levels[:mean_volume].is_a?(Numeric) ? "#{after_levels[:mean_volume]} dB" : after_levels[:mean_volume]
+            max_before = before_levels[:max_volume].is_a?(Numeric) ? "#{before_levels[:max_volume]} dB" : before_levels[:max_volume]
+            max_after = after_levels[:max_volume].is_a?(Numeric) ? "#{after_levels[:max_volume]} dB" : after_levels[:max_volume]
+
+            puts "  #{COLORS[:bold]}Mean volume: #{mean_before} → #{mean_after}#{COLORS[:reset]}"
+            puts "  #{COLORS[:bold]}Max volume: #{max_before} → #{max_after}#{COLORS[:reset]}"
+
             @processed_files += 1
           else
             puts "#{COLORS[:red]}Error: Output file is missing or empty, skipping: #{file}#{COLORS[:reset]}"
@@ -282,15 +372,41 @@ class AnkiAudioNormalizer
         else
           puts "#{COLORS[:red]}Error normalizing: #{file}#{COLORS[:reset]}"
           puts "#{COLORS[:red]}ffmpeg output: #{ffmpeg_output}#{COLORS[:reset]}"
-          @failed_files += 1
+
+          # If the error is due to -inf, try a fallback approach
+          if ffmpeg_output.include?("Value -inf") || ffmpeg_output.include?("Result too large")
+            puts "#{COLORS[:yellow]}Attempting fallback method for very short audio...#{COLORS[:reset]}"
+            fallback_command = %{ffmpeg -i "#{file}" -c:a #{codec} -y -af volume=#{@options[:integrated_loudness].to_f - (-23)}dB "#{temp_file}"}
+
+            puts "#{COLORS[:cyan]}Executing fallback command:#{COLORS[:reset]}"
+            puts "#{COLORS[:bold]}#{COLORS[:yellow]}#{fallback_command}#{COLORS[:reset]}"
+
+            fallback_output = `#{fallback_command} 2>&1`
+            fallback_success = $?.success?
+
+            if fallback_success && File.exist?(temp_file) && File.size(temp_file) > 0
+              FileUtils.mv(temp_file, file)
+              puts "#{COLORS[:green]}Successfully normalized using fallback method: #{file}#{COLORS[:reset]}"
+              @processed_files += 1
+            else
+              puts "#{COLORS[:red]}Fallback method also failed: #{file}#{COLORS[:reset]}"
+              puts "#{COLORS[:red]}Fallback output: #{fallback_output}#{COLORS[:reset]}"
+              @failed_files += 1
+            end
+          else
+            @failed_files += 1
+          end
         end
       rescue => e
         puts "#{COLORS[:red]}Error processing #{file}: #{e.message}#{COLORS[:reset]}"
         puts "#{COLORS[:red]}#{e.backtrace.join("\n")}#{COLORS[:reset]}" if @options[:verbose]
         @failed_files += 1
       ensure
-        # Clean up temp file if it exists
-        FileUtils.rm(temp_file) if defined?(temp_file) && File.exist?(temp_file)
+        # Clean up temp file if it exists - safely check for nil
+        if temp_file && File.exist?(temp_file)
+          FileUtils.rm(temp_file)
+          puts "#{COLORS[:blue]}Cleaned up temporary file#{COLORS[:reset]}" if @options[:verbose]
+        end
       end
     end
   end
