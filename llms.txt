@@ -1,0 +1,26 @@
+# Anki Audio Normalizer
+
+> Anki Audio Normalizer is a Ruby script that helps normalize audio volume levels in Anki flashcard collections using ffmpeg and ffmpeg-loudnorm-helper.
+
+Anki Audio Normalizer solves the problem of inconsistent audio volume levels in language learning flashcards. The tool processes audio files in an Anki collection to normalize them to a consistent loudness level, making the learning experience more pleasant without constantly adjusting volume.
+
+## Overview
+
+- [README](README.md): Installation instructions and basic usage guide
+- [Source Code](anki_audio_normalizer.rb): The main Ruby script with full implementation
+
+## Features
+
+- [Audio File Processing](README.md#features): Normalizes MP3, WAV, OGG, M4A, and FLAC audio files
+- [Output Files](README.md#output-files): Preserves original files and creates normalized versions with a suffix
+- [Volume Level Analysis](README.md#analysis): Measures and reports audio levels before and after normalization
+
+## Dependencies
+
+- [ffmpeg](https://ffmpeg.org/): Required for audio processing
+- [ffmpeg-loudnorm-helper](https://github.com/indiscipline/ffmpeg-loudnorm-helper): Helper tool for loudness normalization
+
+## Optional
+
+- [Advanced Configuration](README.md#configuration): Detailed configuration options
+- [Troubleshooting](README.md#troubleshooting): Solutions for common issues

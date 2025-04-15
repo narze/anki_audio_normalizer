@@ -1,5 +1,3 @@
-
-
 # Anki Audio Normalizer
 
 A Ruby script to normalize audio volume levels in Anki flashcard collections using ffmpeg and ffmpeg-loudnorm-helper.
@@ -7,28 +5,36 @@ A Ruby script to normalize audio volume levels in Anki flashcard collections usi
 ## Installation
 
 1. Ensure you have Ruby installed
+
 2. Install ffmpeg: `brew install ffmpeg` (macOS) or `apt install ffmpeg` (Linux)
+
 3. Install [ffmpeg-loudnorm-helper](https://github.com/indiscipline/ffmpeg-loudnorm-helper):
-   ```
-   git clone https://github.com/indiscipline/ffmpeg-loudnorm-helper.git
-   cd ffmpeg-loudnorm-helper
-   cargo build --release
-   ```
-   Then add the executable to your PATH or place it in the same directory as this script.
+
+```sh
+git clone https://github.com/indiscipline/ffmpeg-loudnorm-helper.git
+cd ffmpeg-loudnorm-helper
+cargo build --release
+```
+
+Then add the executable to your PATH or place it in the same directory as this script.
+
 4. Download `anki_audio_normalizer.rb` and make it executable:
-   ```
-   chmod +x anki_audio_normalizer.rb
-   ```
+
+```sh
+chmod +x anki_audio_normalizer.rb
+```
 
 ## Usage
 
 Basic usage:
-```
+
+```sh
 ./anki_audio_normalizer.rb [options] file_or_directory [file_or_directory...]
 ```
 
 Example:
-```
+
+```sh
 ./anki_audio_normalizer.rb ~/Anki/User\ 1/collection.media
 ```
 
@@ -42,47 +48,50 @@ Anki Audio Normalizer supports:
 - Colorized output with detailed status information
 - Dry-run mode to preview changes without modifying files
 
-## Backup
+## Output Files
 
-The script automatically creates backups of all files before processing them. By default, backups are stored in the `./backup` directory.
+The script preserves the original files and creates new normalized versions:
 
-- Backups are not overwritten if they already exist
-- The backup directory can be customized with the `-b` or `--backup-dir` option
+- Original files remain untouched
+- Normalized files are created with a suffix (default: "_fixed")
+- The suffix can be customized with the `-s` or `--suffix` option
 
 ## Analysis
 
-The script provides detailed audio level analysis:
+The script provides comprehensive audio level analysis using ffmpeg's volumedetect filter:
 
-- Measures integrated loudness (LUFS), true peak (dBTP), and loudness range (LU)
-- Shows before and after measurements for each file
-- Calculates and displays the difference between original and normalized audio
-- Color-codes output to highlight significant changes
+- **Mean Volume**: The average volume level across the entire audio file (in dB)
+- **Max Volume**: The highest peak volume in the audio file (in dB)
+
+For each file processed, the script:
+
+1. Analyzes and displays the original audio levels
+2. Performs normalization using ffmpeg-loudnorm-helper
+3. Analyzes and displays the normalized audio levels
+4. Shows a clear before → after comparison
+
+Example output:
+
+```yaml
+Original audio levels:
+  Mean volume: -28.5 dB
+  Max volume: -18.2 dB
+
+Normalized audio levels:
+  Mean volume: -16.2 dB
+  Max volume: -1.0 dB
+
+Volume change:
+  Mean volume: -28.5 dB → -16.2 dB
+  Max volume: -18.2 dB → -1.0 dB
+```
+
+The color-coded output makes it easy to see the results of the normalization process at a glance.
 
 ## Configuration
 
 Command-line options:
 
+```text
+
 ```
--b, --backup-dir DIR            Backup directory (default: ./backup)
--i, --integrated-loudness LEVEL Integrated loudness target [-70.0..-5.0] (default: -18.0)
--l, --loudness-range RANGE      Loudness range target [1.0..20.0] (default: 12.0)
--t, --true-peak LEVEL           Maximum true peak [-9.0..0.0] (default: -1.0)
--y, --yes                       Skip confirmation prompt
--n, --dry-run                   Show what would be done without making changes
--v, --verbose                   Show verbose output
--h, --help                      Show help message
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **ffmpeg-lh not found**: Ensure ffmpeg-loudnorm-helper is in your PATH or in the current directory
-2. **Very short audio files**: The script includes special handling for very short audio files that might fail with standard normalization
-3. **Input encoding errors**: If you see encoding errors during confirmation, use the `-y` option to skip the confirmation prompt
-
-### Debugging Tips
-
-- Use the `-v` (verbose) option to see detailed information about each step
-- Check the generated `last_ffmpeg_command.sh` file which contains the last ffmpeg command that was executed
-- Examine the raw ffprobe output in verbose mode to diagnose audio level analysis issues
