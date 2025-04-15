@@ -116,3 +116,7 @@ Command-line options:
 - Use the `-v` (verbose) option to see detailed information about each step
 - Check the generated `last_ffmpeg_command.sh` file which contains the last ffmpeg command that was executed
 - Examine the raw ffprobe output in verbose mode to diagnose audio level analysis issues
+
+## Credits
+
+This project was inspired by Tim Taurit's blog post ["How to normalize audio volume in your Anki flashcards"](https://taurit.pl/how-to-normalize-audio-volume-in-anki-deck-media-library/), which outlines the problem and provides a solution approach. This script implements the concepts described in the blog post with additional features and improvements.
