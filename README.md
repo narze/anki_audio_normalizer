@@ -92,6 +92,27 @@ The color-coded output makes it easy to see the results of the normalization pro
 
 Command-line options:
 
-```text
-
 ```
+-s, --suffix SUFFIX             Suffix to add to normalized files (default: _fixed)
+-i, --integrated-loudness LEVEL Integrated loudness target [-70.0..-5.0] (default: -18.0)
+-l, --loudness-range RANGE      Loudness range target [1.0..20.0] (default: 12.0)
+-t, --true-peak LEVEL           Maximum true peak [-9.0..0.0] (default: -1.0)
+-y, --yes                       Skip confirmation prompt
+-n, --dry-run                   Show what would be done without making changes
+-v, --verbose                   Show verbose output
+-h, --help                      Show help message
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **ffmpeg-lh not found**: Ensure ffmpeg-loudnorm-helper is in your PATH or in the current directory
+2. **Very short audio files**: The script includes special handling for very short audio files that might fail with standard normalization
+3. **Input encoding errors**: If you see encoding errors during confirmation, use the `-y` option to skip the confirmation prompt
+
+### Debugging Tips
+
+- Use the `-v` (verbose) option to see detailed information about each step
+- Check the generated `last_ffmpeg_command.sh` file which contains the last ffmpeg command that was executed
+- Examine the raw ffprobe output in verbose mode to diagnose audio level analysis issues
