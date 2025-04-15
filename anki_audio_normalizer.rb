@@ -30,7 +30,7 @@ class AnkiAudioNormalizer
 
   def initialize
     @options = {
-      backup_dir: './backup',
+      suffix: '_fixed',
       integrated_loudness: '-18.0',
       loudness_range: '12.0',
       true_peak: '-1.0',
@@ -49,8 +49,8 @@ class AnkiAudioNormalizer
     OptionParser.new do |opts|
       opts.banner = "Usage: anki_audio_normalizer [options] file_or_directory [file_or_directory...]"
 
-      opts.on("-b", "--backup-dir DIR", "Backup directory (default: ./backup)") do |dir|
-        @options[:backup_dir] = dir
+      opts.on("-s", "--suffix SUFFIX", "Suffix to add to normalized files (default: _fixed)") do |suffix|
+        @options[:suffix] = suffix
       end
 
       opts.on("-i", "--integrated-loudness LEVEL", "Integrated loudness target [-70.0..-5.0] (default: -18.0)") do |level|
@@ -233,8 +233,6 @@ class AnkiAudioNormalizer
   end
 
   def process_files(files)
-    FileUtils.mkdir_p(@options[:backup_dir]) unless @options[:dry_run]
-
     files.each_with_index do |file, index|
       begin
         # Define temp_file as nil initially to avoid reference errors
@@ -248,28 +246,20 @@ class AnkiAudioNormalizer
         puts "  #{COLORS[:bold]}Mean volume: #{before_levels[:mean_volume]} dB#{COLORS[:reset]}"
         puts "  #{COLORS[:bold]}Max volume: #{before_levels[:max_volume]} dB#{COLORS[:reset]}"
 
-        # Generate backup path
-        backup_path = File.join(@options[:backup_dir], File.basename(file))
+        # Generate output path with suffix
+        ext = File.extname(file)
+        base_name = File.basename(file, ext)
+        dir_name = File.dirname(file)
+        output_file = File.join(dir_name, "#{base_name}#{@options[:suffix]}#{ext}")
 
         if @options[:dry_run]
-          puts "  [DRY RUN] Would backup to: #{backup_path}"
-          puts "  [DRY RUN] Would normalize audio using ffmpeg-lh"
+          puts "  [DRY RUN] Would create normalized file: #{output_file}"
           @processed_files += 1
           next # Skip the rest of the loop in dry run mode
         end
 
-        # Check if backup already exists
-        if File.exist?(backup_path)
-          puts "#{COLORS[:yellow]}Backup already exists: #{backup_path}, skipping backup#{COLORS[:reset]}"
-        else
-          # Create backup
-          FileUtils.cp(file, backup_path)
-          puts "  Backed up to: #{backup_path}" if @options[:verbose]
-        end
-
         # Determine appropriate codec based on file extension
-        ext = File.extname(file).downcase
-        codec = CODEC_MAP[ext] || 'copy'
+        codec = CODEC_MAP[ext.downcase] || 'copy'
 
         # Create a temporary file with the same extension
         temp_file = "#{file}.processing#{ext}"
@@ -281,7 +271,7 @@ class AnkiAudioNormalizer
         puts "#{COLORS[:cyan]}Executing ffmpeg-lh command:#{COLORS[:reset]}"
         puts "#{COLORS[:bold]}#{COLORS[:yellow]}#{ffmpeg_lh_cmd}#{COLORS[:reset]}"
 
-        ffmpeg_lh_output = `#{ffmpeg_lh_cmd} 2>&1`
+        ffmpeg_lh_output = `#{ffmpeg_lh_cmd}`
         ffmpeg_lh_success = $?.success?
 
         if !ffmpeg_lh_success
@@ -344,11 +334,11 @@ class AnkiAudioNormalizer
         if ffmpeg_success
           # Verify the output file exists and is valid
           if File.exist?(temp_file) && File.size(temp_file) > 0
-            FileUtils.mv(temp_file, file)
-            puts "#{COLORS[:green]}Successfully normalized: #{file}#{COLORS[:reset]}"
+            FileUtils.mv(temp_file, output_file)
+            puts "#{COLORS[:green]}Successfully normalized: #{output_file}#{COLORS[:reset]}"
 
             # Measure audio levels after normalization
-            after_levels = get_audio_levels(file)
+            after_levels = get_audio_levels(output_file)
             puts "#{COLORS[:cyan]}Normalized audio levels:#{COLORS[:reset]}"
             puts "  #{COLORS[:bold]}Mean volume: #{after_levels[:mean_volume]} dB#{COLORS[:reset]}"
             puts "  #{COLORS[:bold]}Max volume: #{after_levels[:max_volume]} dB#{COLORS[:reset]}"
@@ -385,8 +375,8 @@ class AnkiAudioNormalizer
             fallback_success = $?.success?
 
             if fallback_success && File.exist?(temp_file) && File.size(temp_file) > 0
-              FileUtils.mv(temp_file, file)
-              puts "#{COLORS[:green]}Successfully normalized using fallback method: #{file}#{COLORS[:reset]}"
+              FileUtils.mv(temp_file, output_file)
+              puts "#{COLORS[:green]}Successfully normalized using fallback method: #{output_file}#{COLORS[:reset]}"
               @processed_files += 1
             else
               puts "#{COLORS[:red]}Fallback method also failed: #{file}#{COLORS[:reset]}"
@@ -419,7 +409,7 @@ class AnkiAudioNormalizer
     puts "Skipped: #{@skipped_files}"
 
     unless @options[:dry_run]
-      puts "\nBackups were saved to: #{@options[:backup_dir]}"
+      puts "\nNew files were created with suffix: #{@options[:suffix]}"
     end
   end
 end
